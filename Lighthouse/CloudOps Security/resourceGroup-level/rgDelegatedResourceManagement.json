@@ -26,7 +26,7 @@
                 "description": "Specify an array of objects, containing tuples of Azure Active Directory principalId, a Azure roleDefinitionId, and an optional principalIdDisplayName. The roleDefinition specified is granted to the principalId in the provider's Active Directory and the principalIdDisplayName is visible to customers."
             }
         },
-        "resourceGroupName": {
+        "delegatedResourceGroupName": {
             "type": "string"
         }              
     },
