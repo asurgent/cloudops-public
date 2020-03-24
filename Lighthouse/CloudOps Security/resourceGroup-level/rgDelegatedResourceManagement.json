@@ -32,7 +32,7 @@
     },
     "variables": {
         "mspRegistrationName": "[guid(parameters('mspOfferName'))]",
-        "mspAssignmentName": "[guid(parameters('resourceGroupName'))]"
+        "mspAssignmentName": "[guid(parameters('delegatedResourceGroupName'))]"
     },
     "resources": [
         {
@@ -50,7 +50,7 @@
             "type": "Microsoft.Resources/deployments",
             "apiVersion": "2018-05-01",
             "name": "rgAssignment",
-            "resourceGroup": "[parameters('resourceGroupName')]",
+            "resourceGroup": "[parameters('delegatedResourceGroupName')]",
             "dependsOn": [
                 "[resourceId('Microsoft.ManagedServices/registrationDefinitions/', variables('mspRegistrationName'))]"
             ],
