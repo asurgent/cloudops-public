@@ -11,6 +11,9 @@
         "managedByTenantId": {
         "value": "9583541d-47a0-4deb-9e14-541050ac8bc1"
         },
+        "delegatedResourceGroupName":{
+            "value": "%TARGET_RESOURCEGROUP%"
+        },
         "authorizations": {
             "value": [
                 {
