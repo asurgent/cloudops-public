@@ -44,6 +44,8 @@ function Add-SentinelUAIPermissions {
     )
     begin
     {
+        Add-RequiredModules
+
         # Microsoft Graph App ID (DON'T CHANGE)
         $graphAppId = "00000003-0000-0000-c000-000000000000"
         $graphPermissions = @(
@@ -64,10 +66,9 @@ function Add-SentinelUAIPermissions {
             "Machine.RestrictExecution",
             "Machine.Scan",
             "Machine.StopAndQuarantine",
+            "Machine.LiveResponse",
             "Vulnerability.Read.All"
         )
-
-        Add-RequiredModules
     }
     process
     {
