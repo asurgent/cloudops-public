@@ -67,7 +67,9 @@ function Add-SentinelUAIPermissions {
             "Machine.Scan",
             "Machine.StopAndQuarantine",
             "Machine.LiveResponse",
-            "Vulnerability.Read.All"
+            "Vulnerability.Read.All",
+            "Software.Read.All",
+            "User.Read.All"
         )
     }
     process
