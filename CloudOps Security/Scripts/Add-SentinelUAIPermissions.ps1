@@ -1,3 +1,4 @@
+#Requires -PSEdition Desktop
 param (
     [Parameter(Mandatory = $true)]
     [guid] $tenantId,
@@ -10,31 +11,29 @@ param (
 )
 
 function Add-RequiredModules {
-    if (-not ($aadModule = Get-Module -Name AzureAD -ListAvailable)) {
+    if (-not (Get-Module -Name AzureAD -ListAvailable)) {
         Write-Verbose -Message "Did not find Azure AD module, attempting to install."
         try {
-            Install-Module -Name AzureAD -Force -ErrorAction Stop    
+            Install-Module -Name AzureAD -Scope CurrentUser -Force -ErrorAction Stop    
         }
         catch {
             throw "Failed to install module 'AzureAD'. Error: $($_.Exception.Message)"
         }
     }
-    else {
-        Write-Verbose -Message "Found AzureAD module version: $($aadModule.Version)"
-        Write-Verbose -Message "Importing AzureAD module"
-        Import-Module -Name AzureAD
 
-        Write-Verbose -Message "Azure AD module imported. Attempting to connect."
+    Write-Verbose -Message "Importing AzureAD module"
+    Import-Module -Name AzureAD
+
+    Write-Verbose -Message "Azure AD module imported. Attempting to connect."
+    try {
+        $session = Get-AzureADCurrentSessionInfo -ErrorAction Stop
+    }
+    catch {
         try {
-            $session = Get-AzureADCurrentSessionInfo -ErrorAction Stop
+            $null = Connect-AzureAD -TenantId $tenantId
         }
         catch {
-            try {
-                $null = Connect-AzureAD -TenantId $tenantId
-            }
-            catch {
-                throw "Failed to connect to AzureAD. Error: $($_.Exception.Message)"    
-            }
+            throw "Failed to connect to AzureAD. Error: $($_.Exception.Message)"    
         }
     }
 }
