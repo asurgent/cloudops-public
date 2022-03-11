@@ -63,7 +63,8 @@ $mdfePermissions = @(
     "Machine.LiveResponse",
     "Vulnerability.Read.All",
     "Software.Read.All",
-    "User.Read.All"
+    "User.Read.All",
+    "AdvancedQuery.Read.All"
 )
 
 $errCount = 0
