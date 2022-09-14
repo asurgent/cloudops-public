@@ -33,7 +33,7 @@ function Get-ExternalTeamsChatMembers {
                 $userObject = [PSCustomObject]@{
                     UserId   = $member.AdditionalProperties['userId']
                     Email    = $member.AdditionalProperties['email']
-                    Domain   = $member.AdditionalProperties['email'].Split('@')[1]
+                    Domain   = if(-not [string]::IsNullOrWhiteSpace($member.AdditionalProperties['email'])) { $member.AdditionalProperties['email'].Split('@')[1] }
                     TenantId = $member.AdditionalProperties['tenantId']
                 }
     
@@ -42,7 +42,7 @@ function Get-ExternalTeamsChatMembers {
         }
     }
     
-    return $externalChatMembers | Select-Object -Unique
+    return $externalChatMembers | Select-Object -Unique -Property UserId, Email, Domain, TenantId
 }
 
 $token = (Get-MsalToken -ClientId $clientId -ClientSecret $clientSecret -TenantId $tenantId).AccessToken
