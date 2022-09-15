@@ -28,7 +28,13 @@ function Get-ExternalTeamsChatMembers {
     $token = Get-MsalToken -ClientId $clientId -ClientSecret $clientSecret -TenantId $tenantId
     Connect-MgGraph -AccessToken $token.AccessToken
 
-    $users = Get-MgUser -All
+    try {
+        $users = Get-MgUser -All    
+    }
+    catch {
+        throw "Failed to get users from Graph. Error: $($_.Exception.Message)"
+    }
+    
 
     $externalChatMembers = New-Object System.Collections.ArrayList
     
@@ -37,25 +43,35 @@ function Get-ExternalTeamsChatMembers {
         if($tokenExpiresInMinutes -lt 5)
         {
             Write-Host "Graph token expires in 5 minutes, attempting refresh..." -ForegroundColor Cyan
-            $token = Get-MsalToken -ClientId $clientId -ClientSecret $clientSecret -TenantId $tenantId -ForceRefresh
-            Write-Host -Message "Token refreshed..." -ForegroundColor Cyan
+            try {
+                $token = Get-MsalToken -ClientId $clientId -ClientSecret $clientSecret -TenantId $tenantId -ForceRefresh
+                Write-Host -Message "Token refreshed..." -ForegroundColor Cyan
+            }
+            catch {
+                Write-Error -Message "Failed to refresh Graph token! Error: $($_.Exception.Message)"
+            }
         }
 
         Write-Host "Parsing chats for user: $($user.UserPrincipalName)"
-        $chats = Get-MgUserChat -UserId $user.Id -ExpandProperty Members
-        $chats = $chats | Where-Object { $_.Members.Count -gt 0 }
-    
-        foreach ($member in $chats.Members) {
-            if ($member.AdditionalProperties['tenantId'] -ne $tenantId) {
-                $userObject = [PSCustomObject]@{
-                    UserId   = $member.AdditionalProperties['userId']
-                    Email    = $member.AdditionalProperties['email']
-                    Domain   = if(-not [string]::IsNullOrWhiteSpace($member.AdditionalProperties['email'])) { $member.AdditionalProperties['email'].Split('@')[1] }
-                    TenantId = $member.AdditionalProperties['tenantId']
+        try {
+            $chats = Get-MgUserChat -UserId $user.Id -ExpandProperty Members
+            $chats = $chats | Where-Object { $_.Members.Count -gt 0 }
+        
+            foreach ($member in $chats.Members) {
+                if ($member.AdditionalProperties['tenantId'] -ne $tenantId) {
+                    $userObject = [PSCustomObject]@{
+                        UserId   = $member.AdditionalProperties['userId']
+                        Email    = $member.AdditionalProperties['email']
+                        Domain   = if(-not [string]::IsNullOrWhiteSpace($member.AdditionalProperties['email'])) { $member.AdditionalProperties['email'].Split('@')[1] }
+                        TenantId = $member.AdditionalProperties['tenantId']
+                    }
+        
+                    [void]$externalChatMembers.Add($userObject)
                 }
-    
-                [void]$externalChatMembers.Add($userObject)
             }
+        }
+        catch {
+            Write-Error -Message "Failed to get chats for user $($user.UserPrincipalName). Error: $($_.Exception.Message)"
         }
     }
 
