@@ -16,14 +16,31 @@ param (
 function Get-ExternalTeamsChatMembers {
     param (
         [Parameter(Mandatory)]
-        [guid] $tenantId
+        [guid] $tenantId,
+
+        [Parameter(Mandatory)]
+        [string] $clientId,
+    
+        [Parameter(Mandatory)]
+        [securestring] $clientSecret
     )
 
-    $users = Get-MgUser
+    $token = Get-MsalToken -ClientId $clientId -ClientSecret $clientSecret -TenantId $tenantId
+    Connect-MgGraph -AccessToken $token.AccessToken
+
+    $users = Get-MgUser -All
 
     $externalChatMembers = New-Object System.Collections.ArrayList
     
     foreach ($user in $users) {
+        $tokenExpiresInMinutes = ($token.ExpiresOn.LocalDateTime - (Get-Date)).Minutes
+        if($tokenExpiresInMinutes -lt 5)
+        {
+            Write-Host "Graph token expires in 5 minutes, attempting refresh..." -ForegroundColor Cyan
+            $token = Get-MsalToken -ClientId $clientId -ClientSecret $clientSecret -TenantId $tenantId -ForceRefresh
+            Write-Host -Message "Token refreshed..." -ForegroundColor Cyan
+        }
+
         Write-Host "Parsing chats for user: $($user.UserPrincipalName)"
         $chats = Get-MgUserChat -UserId $user.Id -ExpandProperty Members
         $chats = $chats | Where-Object { $_.Members.Count -gt 0 }
@@ -41,19 +58,17 @@ function Get-ExternalTeamsChatMembers {
             }
         }
     }
-    
+
     return $externalChatMembers | Select-Object -Unique -Property UserId, Email, Domain, TenantId
 }
-
-$token = (Get-MsalToken -ClientId $clientId -ClientSecret $clientSecret -TenantId $tenantId).AccessToken
-Connect-MgGraph -AccessToken $token
 
 if(-not (Test-Path $outpath))
 {
     New-Item -Path $outpath -ItemType Directory
 }
 
-$externalChatMembers = Get-ExternalTeamsChatMembers -tenantId $tenantId
+$externalChatMembers = (Get-ExternalTeamsChatMembers -tenantId $tenantId -clientId $clientId -clientSecret $clientSecret) | Select-Object -Property UserId, Email, Domain, TenantId
+$externalChatMembers = $externalChatMembers | Where-Object {$null -ne $_.Email}
 
 $color = if($externalChatMembers.Count -gt 0) {"DarkYellow"} else {"Green"}
 Write-Host -ForegroundColor $color "Found $($externalChatMembers.Count) external chat members."
