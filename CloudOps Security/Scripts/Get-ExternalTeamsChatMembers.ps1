@@ -45,6 +45,7 @@ function Get-ExternalTeamsChatMembers {
             Write-Host "Graph token expires in 5 minutes, attempting refresh..." -ForegroundColor Cyan
             try {
                 $token = Get-MsalToken -ClientId $clientId -ClientSecret $clientSecret -TenantId $tenantId -ForceRefresh
+                Connect-MgGraph -AccessToken $token.AccessToken
                 Write-Host -Message "Token refreshed..." -ForegroundColor Cyan
             }
             catch {
