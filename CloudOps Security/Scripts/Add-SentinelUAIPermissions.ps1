@@ -67,6 +67,12 @@ $mdfePermissions = @(
     "AdvancedQuery.Read.All"
 )
 
+# Microsoft 365 Defender App ID (DON'T CHANGE)
+$mdAppId = "8ee8fdad-f234-4243-8f3b-15c294843740"
+$mdPermissions = @(
+    "AdvancedHunting.Read.All"
+)
+
 $errCount = 0
 $uai = Get-AzureADServicePrincipal -Filter "displayName eq '$uaiDisplayName'"
 $graphSPN = Get-AzureADServicePrincipal -Filter "appId eq '$graphAppId'"
@@ -90,12 +96,32 @@ foreach ($graphPermission in $graphPermissions) {
 
 if ($IncludeMDfEPermissions) {
     $mdfeSPN = Get-AzureADServicePrincipal -Filter "appId eq '$mdfeAppId'"
+    $mdSPN = Get-AzureADServicePrincipal -Filter "appId eq '$mdAppId'"
+
     foreach ($mdfePermission in $mdfePermissions) {
         Write-Host "Attempting to add role $mdfePermission" -ForegroundColor Cyan
         $mdfeRole = $mdfeSPN.AppRoles | Where-Object { $_.Value -eq $mdfePermission -and $_.AllowedMemberTypes -contains "Application" }
         
         try {
             New-AzureAdServiceAppRoleAssignment -ObjectId $uai.ObjectId -PrincipalId $uai.ObjectId -ResourceId $mdfeSPN.ObjectId -Id $mdfeRole.Id -ErrorAction Stop    
+        }
+        catch {
+            if ($_.Exception.Message -like "*already exists*") {
+                Write-Warning -Message "Permission being assigned already exists on the object."
+            }
+            else {
+                Write-Error -Message $_.Exception.Message
+                $errCount++
+            }
+        }
+    }
+
+    foreach ($mdPermission in $mdPermissions) {
+        Write-Host "Attempting to add role $mdPermission" -ForegroundColor Cyan
+        $mdRole = $mdSPN.AppRoles | Where-Object { $_.Value -eq $mdPermission -and $_.AllowedMemberTypes -contains "Application"}
+
+        try {
+            New-AzureAdServiceAppRoleAssignment -ObjectId $uai.ObjectId -PrincipalId $uai.ObjectId -ResourceId $mdSPN.ObjectId -Id $mdRole.Id -ErrorAction Stop
         }
         catch {
             if ($_.Exception.Message -like "*already exists*") {
