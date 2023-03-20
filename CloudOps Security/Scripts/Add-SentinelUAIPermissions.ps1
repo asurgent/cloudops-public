@@ -99,7 +99,8 @@ $graphSPN = Get-MgServicePrincipal -Filter "appId eq '$graphAppId'"
 
 $graphPermissions = @(
     "Directory.ReadWrite.All",
-    "IdentityRiskyUser.ReadWrite.All"
+    "IdentityRiskyUser.ReadWrite.All",
+    "ThreatIndicators.ReadWrite.OwnedBy"
 )
 
 $graphPermissionRoles = $graphSPN.AppRoles | Where-Object { $_.Value -in $graphPermissions}
