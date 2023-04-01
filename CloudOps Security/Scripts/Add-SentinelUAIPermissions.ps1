@@ -152,7 +152,8 @@ if($IncludeMDEPermissions)
         "Vulnerability.Read.All",
         "Software.Read.All",
         "User.Read.All",
-        "AdvancedQuery.Read.All"
+        "AdvancedQuery.Read.All",
+        "Ti.ReadWrite.All"
     )
 
     $mdePermissionRoles = $mdeSPN.AppRoles | Where-Object { $_.Value -in $mdePermissions }
