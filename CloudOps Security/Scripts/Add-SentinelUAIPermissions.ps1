@@ -28,7 +28,7 @@ function Add-RequiredModules {
             }
         }
 
-        Write-Verbose -Message "Attempting to importing module `"$module`""
+        Write-Verbose -Message "Attempting to import module `"$module`""
         try {
             Import-Module -Name $module -ErrorAction Stop
         }
@@ -76,7 +76,7 @@ $scopes = @(
 
 Add-RequiredModules
 
-$null = Connect-MgGraph -Scopes $scopes -TenantId $TenantId -ForceRefresh
+$null = Connect-MgGraph -Scopes $scopes -TenantId $TenantId
 
 $scopeErrors = Confirm-ContextScopes -Scopes $scopes
 if (-not $null -eq $scopeErrors)
