@@ -134,7 +134,7 @@ foreach ($graphPermissionRole in $graphPermissionRoles)
 
 if($IncludeMDEPermissions)
 {
-    # Microsoft Defender for Endpoint App ID (DON'T CHANGE)
+    # WindowsDefenderATP (Microsoft Defender for Endpoint) App ID (DON'T CHANGE)
     $mdeAppId = "fc780465-2017-40d4-a0c5-307022471b92"
     $mdeSPN = Get-MgServicePrincipal -Filter "appId eq '$mdeAppId'"
 
@@ -183,7 +183,7 @@ if($IncludeMDEPermissions)
         }
     }
 
-    # Microsoft 365 Defender App ID (DON'T CHANGE)
+    # Microsoft Threat Protection (Microsoft Defender XDR) App ID (DON'T CHANGE)
     $mdAppId = "8ee8fdad-f234-4243-8f3b-15c294843740"
     $mdSPN = Get-MgServicePrincipal -Filter "appId eq '$mdAppId'"
 
