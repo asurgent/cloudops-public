@@ -98,6 +98,7 @@ $graphAppId = "00000003-0000-0000-c000-000000000000"
 $graphSPN = Get-MgServicePrincipal -Filter "appId eq '$graphAppId'"
 
 $graphPermissions = @(
+    "Application.Read.All",
     "User.Read.All",
     "User.EnableDisableAccount.All",
     "User.RevokeSessions.All",
@@ -159,7 +160,7 @@ if($IncludeMDEPermissions)
     $mdeSPN = Get-MgServicePrincipal -Filter "appId eq '$mdeAppId'"
 
     $mdePermissions = @(
-        "Alert.Read.All",
+        "Alert.ReadWrite.All",
         "Ip.Read.All",
         "File.Read.All",
         "URL.Read.All",
