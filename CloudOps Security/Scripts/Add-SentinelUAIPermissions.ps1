@@ -98,10 +98,12 @@ $graphAppId = "00000003-0000-0000-c000-000000000000"
 $graphSPN = Get-MgServicePrincipal -Filter "appId eq '$graphAppId'"
 
 $graphPermissions = @(
-    "Directory.ReadWrite.All",
+    "User.Read.All",
+    "User.EnableDisableAccount.All",
+    "User.RevokeSessions.All",
     "IdentityRiskyUser.ReadWrite.All",
-    "ThreatIndicators.ReadWrite.OwnedBy",
-    "Mail.ReadWrite"
+    "Mail.ReadWrite",
+    "ThreatHunting.Read.All"
 )
 
 $graphPermissionRoles = $graphSPN.AppRoles | Where-Object { $_.Value -in $graphPermissions}
@@ -124,11 +126,29 @@ foreach ($graphPermissionRole in $graphPermissionRoles)
         }
         catch {
             Write-Host " - Failed!" -ForegroundColor Red
-            Write-Warning -Message "Failed to add Microsoft Graph permission $($graphPermissionRole.Value). Error: $($_.Exception.Message)"
+            Write-Warning -Message "Failed to add Microsoft Graph permission `"$($graphPermissionRole.Value)`" to UAI. Error: $($_.Exception.Message)"
         }
     }
     else {
         Write-Host "Microsoft Graph permission `"$($graphPermissionRole.Value)`" is already assigned to UAI." -ForegroundColor Green
+    }
+}
+
+foreach ($currentGraphAssignment in $currentGraphUaiAssignments)
+{
+    if ($currentGraphAssignment.AppRoleId -notin $graphPermissionRoles.Id)
+    {
+        $assignmentId = ($currentGraphUaiAssignments | Where-Object { $_.AppRoleId -eq $currentGraphAssignment.AppRoleId }).Id
+        $permission = $graphSPN.AppRoles | Where-Object { $_.Id -eq $currentGraphAssignment.AppRoleId }
+        try {
+            Write-Host "Attempting to remove Microsoft Graph permission `"$($permission.Value)`" from UAI." -ForegroundColor Cyan -NoNewline
+            $null = Remove-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $graphSPN.Id -AppRoleAssignmentId $assignmentId -ErrorAction Stop
+            Write-Host " - Success!" -ForegroundColor Green
+        }
+        catch {
+            Write-Host " - Failed!" -ForegroundColor Red
+            Write-Warning -Message "Failed to remove Microsoft Graph permission `"$($permission.Value)`" from UAI. Error: $($_.Exception.Message)"
+        }
     }
 }
 
@@ -149,11 +169,9 @@ if($IncludeMDEPermissions)
         "Machine.RestrictExecution",
         "Machine.Scan",
         "Machine.StopAndQuarantine",
-        "Machine.LiveResponse",
         "Vulnerability.Read.All",
         "Software.Read.All",
         "User.Read.All",
-        "AdvancedQuery.Read.All",
         "Ti.ReadWrite.All"
     )
 
@@ -183,37 +201,45 @@ if($IncludeMDEPermissions)
         }
     }
 
-    # Microsoft Threat Protection (Microsoft Defender XDR) App ID (DON'T CHANGE)
-    $mdAppId = "8ee8fdad-f234-4243-8f3b-15c294843740"
-    $mdSPN = Get-MgServicePrincipal -Filter "appId eq '$mdAppId'"
-
-    $mdPermissions = @(
-        "AdvancedHunting.Read.All"
-    )
-
-    $mdPermissionRoles = $mdSPN.AppRoles | Where-Object { $_.Value -in $mdPermissions }
-    $currentmdUaiAssignments = $uaiAssignments | Where-Object { $_.ResourceId -eq $mdSPN.Id }
-
-    foreach ($mdPermissionRole in $mdPermissionRoles) {
-        if ($mdPermissionRole.Id -notin $currentmdUaiAssignments.AppRoleId) {
-            $permission = @{
-                principalId = $uaiServicePrincipalId
-                resourceId  = $mdSPN.Id
-                appRoleId   = $mdPermissionRole.Id
-            }
-
+    foreach ($currentMdeAssignment in $currentmdeUaiAssignments)
+    {
+        if ($currentMdeAssignment.AppRoleId -notin $mdePermissionRoles.Id)
+        {
+            $assignmentId = ($currentmdeUaiAssignments | Where-Object { $_.AppRoleId -eq $currentMdeAssignment.AppRoleId }).Id
+            $permission = $mdeSPN.AppRoles | Where-Object { $_.Id -eq $currentMdeAssignment.AppRoleId }
             try {
-                Write-Host "Attempting to add Microsoft 365 Defender permission `"$($mdPermissionRole.Value)`" to UAI." -ForegroundColor Cyan -NoNewline
-                $null = New-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $mdSPN.Id -BodyParameter $permission -ErrorAction Stop
+                Write-Host "Attempting to remove Microsoft Defender for Endpoint permission `"$($permission.Value)`" from UAI." -ForegroundColor Cyan -NoNewline
+                $null = Remove-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $mdeSPN.Id -AppRoleAssignmentId $assignmentId -ErrorAction Stop
                 Write-Host " - Success!" -ForegroundColor Green
             }
             catch {
                 Write-Host " - Failed!" -ForegroundColor Red
-                Write-Warning -Message "Failed to add Microsoft 365 Defender permission $($mdPermissionRole.Value). Error: $($_.Exception.Message)"
+                Write-Warning -Message "Failed to remove Microsoft Defender for Endpoint permission `"$($permission.Value)`" from UAI. Error: $($_.Exception.Message)"
             }
         }
-        else {
-            Write-Host "Microsoft 365 Defender permission `"$($mdPermissionRole.Value)`" is already assigned to UAI." -ForegroundColor Green
+    }
+
+    # Microsoft Threat Protection (Microsoft Defender XDR) App ID (DON'T CHANGE)
+    $mdAppId = "8ee8fdad-f234-4243-8f3b-15c294843740"
+    $mdSPN = Get-MgServicePrincipal -Filter "appId eq '$mdAppId'"
+
+    $currentmdUaiAssignments = $uaiAssignments | Where-Object { $_.ResourceId -eq $mdSPN.Id }
+
+    if($currentMdUaiAssignments.Count -gt 0)
+    {
+        foreach ($currentmdUaiAssignment in $currentmdUaiAssignments)
+        {
+            $assignmentId = $currentmdUaiAssignment.Id
+            $permission = $mdSPN.AppRoles | Where-Object { $_.Id -eq $currentmdUaiAssignment.AppRoleId }
+            try {
+                Write-Host "Attempting to remove Microsoft 365 Defender permission `"$($permission.Value)`" from UAI." -ForegroundColor Cyan -NoNewline
+                $null = Remove-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $mdSPN.Id -AppRoleAssignmentId $assignmentId -ErrorAction Stop
+                Write-Host " - Success!" -ForegroundColor Green
+            }
+            catch {
+                Write-Host " - Failed!" -ForegroundColor Red
+                Write-Warning -Message "Failed to remove Microsoft 365 Defender permission `"$($permission.Value)`" from UAI. Error: $($_.Exception.Message)"
+            }
         }
     }
 }
