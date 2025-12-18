@@ -132,16 +132,19 @@ foreach ($graphPermissionRole in $graphPermissionRoles) {
 
 foreach ($currentGraphAssignment in $currentGraphUaiAssignments) {
     if ($currentGraphAssignment.AppRoleId -notin $graphPermissionRoles.Id) {
-        $assignmentId = ($currentGraphUaiAssignments | Where-Object { $_.AppRoleId -eq $currentGraphAssignment.AppRoleId }).Id
+        $assignmentIds = ($currentGraphUaiAssignments | Where-Object { $_.AppRoleId -eq $currentGraphAssignment.AppRoleId }).Id
         $permission = $graphSPN.AppRoles | Where-Object { $_.Id -eq $currentGraphAssignment.AppRoleId }
-        try {
-            Write-Host "Attempting to remove Microsoft Graph permission `"$($permission.Value)`" from UAI." -ForegroundColor Cyan -NoNewline
-            $null = Remove-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $graphSPN.Id -AppRoleAssignmentId $assignmentId -ErrorAction Stop
-            Write-Host " - Success!" -ForegroundColor Green
-        }
-        catch {
-            Write-Host " - Failed!" -ForegroundColor Red
-            Write-Warning -Message "Failed to remove Microsoft Graph permission `"$($permission.Value)`" from UAI. Error: $($_.Exception.Message)"
+        
+        foreach ($assignmentId in $assignmentIds) {
+            try {
+                Write-Host "Attempting to remove Microsoft Graph permission `"$($permission.Value)`" from UAI." -ForegroundColor Cyan -NoNewline
+                $null = Remove-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $graphSPN.Id -AppRoleAssignmentId $assignmentId -ErrorAction Stop
+                Write-Host " - Success!" -ForegroundColor Green
+            }
+            catch {
+                Write-Host " - Failed!" -ForegroundColor Red
+                Write-Warning -Message "Failed to remove Microsoft Graph permission `"$($permission.Value)`" from UAI. Error: $($_.Exception.Message)"
+            }
         }
     }
 }
