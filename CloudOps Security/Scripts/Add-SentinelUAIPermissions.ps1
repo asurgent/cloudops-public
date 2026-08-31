@@ -3,10 +3,7 @@ param (
     [guid] $TenantId,
 
     [Parameter(Mandatory = $false)]
-    [string] $UAIDisplayName = 'uai-sentinel',
-
-    [Parameter(Mandatory = $false)]
-    [bool] $IncludeMDEPermissions
+    [string] $UAIDisplayName = 'uai-sentinel'
 )
 
 function Add-RequiredModules {
@@ -20,7 +17,7 @@ function Add-RequiredModules {
         if (-not (Get-Module -Name $module -ListAvailable)) {
             Write-Verbose -Message "Did not find module `"$module`", attempting to install."
             try {
-                Install-Module -Name $module -Scope CurrentUser -Force -ErrorAction Stop    
+                Install-Module -Name $module -Scope CurrentUser -Force -ErrorAction Stop
             }
             catch {
                 throw "Failed to install module `"$module`". Error: $($_.Exception.Message)"
@@ -43,28 +40,101 @@ function Confirm-ContextScopes {
         [array] $Scopes
     )
 
-    $scopeErrors = @()
-
     try {
         $context = Get-MgContext -ErrorAction Stop
     }
     catch {
         throw "Failed to get Microsoft Graph context. Make sure that you are connected to Microsoft Graph: `"Connect-MgGraph`""
     }
-    
-    foreach ($scope in $Scopes) {
-        $hasScope = $false
 
-        if ($scope -in $context.Scopes) {
-            $hasScope = $true
-        }
-
-        if (-not $hasScope) {
-            $scopeErrors += "Necessary scopes not found in current Microsoft Graph context. You need the following scopes: $Scopes"
+    $scopeErrors = foreach ($scope in $Scopes) {
+        if ($scope -notin $context.Scopes) {
+            "Necessary scopes not found in current Microsoft Graph context. You need the following scopes: $Scopes"
         }
     }
 
     return $scopeErrors | Select-Object -Unique
+}
+
+function Invoke-PermissionChange {
+    Param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('add', 'remove')]
+        [string] $Action,
+
+        [Parameter(Mandatory = $true)]
+        [string] $ResourceName,
+
+        [Parameter(Mandatory = $true)]
+        [string] $PermissionValue,
+
+        [Parameter(Mandatory = $true)]
+        [scriptblock] $Operation
+    )
+
+    $preposition = if ($Action -eq 'add') { 'to' } else { 'from' }
+
+    try {
+        Write-Host "Attempting to $Action $ResourceName permission `"$PermissionValue`" $preposition UAI." -ForegroundColor Cyan -NoNewline
+        $null = & $Operation
+        Write-Host " - Success!" -ForegroundColor Green
+    }
+    catch {
+        Write-Host " - Failed!" -ForegroundColor Red
+        Write-Warning -Message "Failed to $Action $ResourceName permission `"$PermissionValue`" $preposition UAI. Error: $($_.Exception.Message)"
+    }
+}
+
+function Sync-UAIPermissions {
+    Param(
+        [Parameter(Mandatory = $true)]
+        [string] $ResourceName,
+
+        [Parameter(Mandatory = $true)]
+        [string] $AppId,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [array] $Permissions,
+
+        [Parameter(Mandatory = $true)]
+        [string] $UAIServicePrincipalId,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [array] $UAIAssignments
+    )
+
+    $resourceSPN = Get-MgServicePrincipal -Filter "appId eq '$AppId'"
+    $desiredRoles = $resourceSPN.AppRoles | Where-Object { $_.Value -in $Permissions }
+    $currentAssignments = $UAIAssignments | Where-Object { $_.ResourceId -eq $resourceSPN.Id }
+
+    # Add the permissions that are missing
+    foreach ($role in $desiredRoles) {
+        if ($role.Id -in $currentAssignments.AppRoleId) {
+            Write-Host "$ResourceName permission `"$($role.Value)`" is already assigned to UAI." -ForegroundColor Green
+            continue
+        }
+
+        $body = @{
+            principalId = $UAIServicePrincipalId
+            resourceId  = $resourceSPN.Id
+            appRoleId   = $role.Id
+        }
+
+        Invoke-PermissionChange -Action 'add' -ResourceName $ResourceName -PermissionValue $role.Value -Operation {
+            New-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $resourceSPN.Id -BodyParameter $body -ErrorAction Stop
+        }
+    }
+
+    # Remove the permissions that are no longer wanted
+    foreach ($assignment in ($currentAssignments | Where-Object { $_.AppRoleId -notin $desiredRoles.Id })) {
+        $permissionValue = ($resourceSPN.AppRoles | Where-Object { $_.Id -eq $assignment.AppRoleId }).Value
+
+        Invoke-PermissionChange -Action 'remove' -ResourceName $ResourceName -PermissionValue $permissionValue -Operation {
+            Remove-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $resourceSPN.Id -AppRoleAssignmentId $assignment.Id -ErrorAction Stop
+        }
+    }
 }
 
 $scopes = @(
@@ -82,186 +152,65 @@ if (-not $null -eq $scopeErrors) {
 }
 
 try {
-    $uaiServicePrincipalId = (Get-MgServicePrincipal -Filter "displayName eq '$UAIDisplayName'" -Property Id -ErrorAction Stop | Select-Object -Property Id).Id    
+    $uaiServicePrincipalId = (Get-MgServicePrincipal -Filter "displayName eq '$UAIDisplayName'" -Property Id -ErrorAction Stop | Select-Object -Property Id).Id
 }
 catch {
     throw "Failed to get User Assigned Identity `"$UAIDisplayName`" from Microsoft Graph. Make sure that the UAI exists."
 }
 
-$uaiAssignments = Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $uaiServicePrincipalId
+$uaiAssignments = @(Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $uaiServicePrincipalId)
 
-# Microsoft Graph App ID (DON'T CHANGE)
-$graphAppId = "00000003-0000-0000-c000-000000000000"
-$graphSPN = Get-MgServicePrincipal -Filter "appId eq '$graphAppId'"
-
-$graphPermissions = @(
-    "Application.Read.All",
-    "User.Read.All",
-    "User.EnableDisableAccount.All",
-    "User.RevokeSessions.All",
-    "IdentityRiskyUser.ReadWrite.All",
-    "Mail.ReadWrite",
-    "ThreatHunting.Read.All"
+$resources = @(
+    @{
+        ResourceName = 'Microsoft Graph'
+        # Microsoft Graph App ID (DON'T CHANGE)
+        AppId        = '00000003-0000-0000-c000-000000000000'
+        Permissions  = @(
+            "Application.Read.All",
+            "User.Read.All",
+            "User.EnableDisableAccount.All",
+            "User.RevokeSessions.All",
+            "User-PasswordProfile.ReadWrite.All",
+            "IdentityRiskyUser.ReadWrite.All",
+            "Mail.ReadWrite",
+            "ThreatHunting.Read.All"
+        )
+    },
+    @{
+        ResourceName = 'Microsoft Defender for Endpoint'
+        # WindowsDefenderATP (Microsoft Defender for Endpoint) App ID (DON'T CHANGE)
+        AppId        = 'fc780465-2017-40d4-a0c5-307022471b92'
+        Permissions  = @(
+            "Alert.ReadWrite.All",
+            "Ip.Read.All",
+            "File.Read.All",
+            "URL.Read.All",
+            "Machine.CollectForensics",
+            "Machine.Isolate",
+            "Machine.Read.All",
+            "Machine.RestrictExecution",
+            "Machine.Scan",
+            "Machine.StopAndQuarantine",
+            "Vulnerability.Read.All",
+            "Software.Read.All",
+            "User.Read.All",
+            "Ti.ReadWrite.All"
+            # Replaced by Graph permission "ThreatHunting.Read.All"
+            # "AdvancedQuery.Read.All"
+        )
+    },
+    @{
+        ResourceName = 'Microsoft 365 Defender'
+        # Microsoft Threat Protection (Microsoft Defender XDR) App ID (DON'T CHANGE)
+        AppId        = '8ee8fdad-f234-4243-8f3b-15c294843740'
+        Permissions  = @(
+            # Replaced by Graph permission "ThreatHunting.Read.All"
+            # "AdvancedHunting.Read.All"
+        )
+    }
 )
 
-$graphPermissionRoles = $graphSPN.AppRoles | Where-Object { $_.Value -in $graphPermissions }
-$currentGraphUaiAssignments = $uaiAssignments | Where-Object { $_.ResourceId -eq $graphSPN.Id }
-
-foreach ($graphPermissionRole in $graphPermissionRoles) {
-    if ($graphPermissionRole.Id -notin $currentGraphUaiAssignments.AppRoleId) {
-        $permission = @{
-            principalId = $uaiServicePrincipalId
-            resourceId  = $graphSPN.Id
-            appRoleId   = $graphPermissionRole.Id
-        }
-
-        try {
-            Write-Host "Attempting to add Microsoft Graph permission `"$($graphPermissionRole.Value)`" to UAI." -ForegroundColor Cyan -NoNewline
-            $null = New-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $graphSPN.Id -BodyParameter $permission -ErrorAction Stop
-            Write-Host " - Success!" -ForegroundColor Green
-        }
-        catch {
-            Write-Host " - Failed!" -ForegroundColor Red
-            Write-Warning -Message "Failed to add Microsoft Graph permission `"$($graphPermissionRole.Value)`" to UAI. Error: $($_.Exception.Message)"
-        }
-    }
-    else {
-        Write-Host "Microsoft Graph permission `"$($graphPermissionRole.Value)`" is already assigned to UAI." -ForegroundColor Green
-    }
-}
-
-foreach ($currentGraphAssignment in $currentGraphUaiAssignments) {
-    if ($currentGraphAssignment.AppRoleId -notin $graphPermissionRoles.Id) {
-        $assignmentIds = ($currentGraphUaiAssignments | Where-Object { $_.AppRoleId -eq $currentGraphAssignment.AppRoleId }).Id
-        $permission = $graphSPN.AppRoles | Where-Object { $_.Id -eq $currentGraphAssignment.AppRoleId }
-        
-        foreach ($assignmentId in $assignmentIds) {
-            try {
-                Write-Host "Attempting to remove Microsoft Graph permission `"$($permission.Value)`" from UAI." -ForegroundColor Cyan -NoNewline
-                $null = Remove-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $graphSPN.Id -AppRoleAssignmentId $assignmentId -ErrorAction Stop
-                Write-Host " - Success!" -ForegroundColor Green
-            }
-            catch {
-                Write-Host " - Failed!" -ForegroundColor Red
-                Write-Warning -Message "Failed to remove Microsoft Graph permission `"$($permission.Value)`" from UAI. Error: $($_.Exception.Message)"
-            }
-        }
-    }
-}
-
-if ($IncludeMDEPermissions) {
-    # WindowsDefenderATP (Microsoft Defender for Endpoint) App ID (DON'T CHANGE)
-    $mdeAppId = "fc780465-2017-40d4-a0c5-307022471b92"
-    $mdeSPN = Get-MgServicePrincipal -Filter "appId eq '$mdeAppId'"
-
-    $mdePermissions = @(
-        "Alert.ReadWrite.All",
-        "Ip.Read.All",
-        "File.Read.All",
-        "URL.Read.All",
-        "Machine.CollectForensics",
-        "Machine.Isolate",
-        "Machine.Read.All",
-        "Machine.RestrictExecution",
-        "Machine.Scan",
-        "Machine.StopAndQuarantine",
-        "Vulnerability.Read.All",
-        "Software.Read.All",
-        "User.Read.All",
-        "Ti.ReadWrite.All",
-        "AdvancedQuery.Read.All"
-    )
-
-    $mdePermissionRoles = $mdeSPN.AppRoles | Where-Object { $_.Value -in $mdePermissions }
-    $currentmdeUaiAssignments = $uaiAssignments | Where-Object { $_.ResourceId -eq $mdeSPN.Id }
-
-    foreach ($mdePermissionRole in $mdePermissionRoles) {
-        if ($mdePermissionRole.Id -notin $currentmdeUaiAssignments.AppRoleId) {
-            $permission = @{
-                principalId = $uaiServicePrincipalId
-                resourceId  = $mdeSPN.Id
-                appRoleId   = $mdePermissionRole.Id
-            }
-
-            try {
-                Write-Host "Attempting to add Microsoft Defender for Endpoint permission `"$($mdePermissionRole.Value)`" to UAI." -ForegroundColor Cyan -NoNewline
-                $null = New-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $mdeSPN.Id -BodyParameter $permission -ErrorAction Stop
-                Write-Host " - Success!" -ForegroundColor Green
-            }
-            catch {
-                Write-Host " - Failed!" -ForegroundColor Red
-                Write-Warning -Message "Failed to add Microsoft Defender for Endpoint permission $($mdePermissionRole.Value). Error: $($_.Exception.Message)"
-            }
-        }
-        else {
-            Write-Host "Microsoft Defender for Endpoint permission `"$($mdePermissionRole.Value)`" is already assigned to UAI." -ForegroundColor Green
-        }
-    }
-
-    foreach ($currentMdeAssignment in $currentmdeUaiAssignments) {
-        if ($currentMdeAssignment.AppRoleId -notin $mdePermissionRoles.Id) {
-            $assignmentId = ($currentmdeUaiAssignments | Where-Object { $_.AppRoleId -eq $currentMdeAssignment.AppRoleId }).Id
-            $permission = $mdeSPN.AppRoles | Where-Object { $_.Id -eq $currentMdeAssignment.AppRoleId }
-            try {
-                Write-Host "Attempting to remove Microsoft Defender for Endpoint permission `"$($permission.Value)`" from UAI." -ForegroundColor Cyan -NoNewline
-                $null = Remove-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $mdeSPN.Id -AppRoleAssignmentId $assignmentId -ErrorAction Stop
-                Write-Host " - Success!" -ForegroundColor Green
-            }
-            catch {
-                Write-Host " - Failed!" -ForegroundColor Red
-                Write-Warning -Message "Failed to remove Microsoft Defender for Endpoint permission `"$($permission.Value)`" from UAI. Error: $($_.Exception.Message)"
-            }
-        }
-    }
-
-    # Microsoft Threat Protection (Microsoft Defender XDR) App ID (DON'T CHANGE)
-    $mdAppId = "8ee8fdad-f234-4243-8f3b-15c294843740"
-    $mdSPN = Get-MgServicePrincipal -Filter "appId eq '$mdAppId'"
-    $mdPermissions = @(
-        "AdvancedHunting.Read.All"
-    )
-
-    $mdPermissionRoles = $mdSPN.AppRoles | Where-Object { $_.Value -in $mdPermissions }
-    $currentmdUaiAssignments = $uaiAssignments | Where-Object { $_.ResourceId -eq $mdSPN.Id }
-
-    foreach ($mdPermissionRole in $mdPermissionRoles) {
-        if ($mdPermissionRole.Id -notin $currentmdUaiAssignments.AppRoleId) {
-            $permission = @{
-                principalId = $uaiServicePrincipalId
-                resourceId  = $mdSPN.Id
-                appRoleId   = $mdPermissionRole.Id
-            }
-
-            try {
-                Write-Host "Attempting to add Microsoft 365 Defender permission `"$($mdPermissionRole.Value)`" to UAI." -ForegroundColor Cyan -NoNewline
-                $null = New-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $mdSPN.Id -BodyParameter $permission -ErrorAction Stop
-                Write-Host " - Success!" -ForegroundColor Green
-            }
-            catch {
-                Write-Host " - Failed!" -ForegroundColor Red
-                Write-Warning -Message "Failed to add Microsoft 365 Defender permission $($mdPermissionRole.Value). Error: $($_.Exception.Message)"
-            }
-        }
-        else {
-            Write-Host "Microsoft 365 Defender permission `"$($mdPermissionRole.Value)`" is already assigned to UAI." -ForegroundColor Green
-        }
-    }
-
-    if ($currentMdUaiAssignments.Count -gt 0) {
-        foreach ($currentmdUaiAssignment in $currentmdUaiAssignments) {
-            if ($currentmdUaiAssignment.AppRoleId -notin $mdPermissionRoles.Id) {
-                $assignmentId = $currentmdUaiAssignment.Id
-                $permission = $mdSPN.AppRoles | Where-Object { $_.Id -eq $currentmdUaiAssignment.AppRoleId }
-                try {
-                    Write-Host "Attempting to remove Microsoft 365 Defender permission `"$($permission.Value)`" from UAI." -ForegroundColor Cyan -NoNewline
-                    $null = Remove-MgServicePrincipalAppRoleAssignedTo -ServicePrincipalId $mdSPN.Id -AppRoleAssignmentId $assignmentId -ErrorAction Stop
-                    Write-Host " - Success!" -ForegroundColor Green
-                }
-                catch {
-                    Write-Host " - Failed!" -ForegroundColor Red
-                    Write-Warning -Message "Failed to remove Microsoft 365 Defender permission `"$($permission.Value)`" from UAI. Error: $($_.Exception.Message)"
-                }
-            }
-        }
-    }
+foreach ($resource in $resources) {
+    Sync-UAIPermissions -ResourceName $resource.ResourceName -AppId $resource.AppId -Permissions $resource.Permissions `
+        -UAIServicePrincipalId $uaiServicePrincipalId -UAIAssignments $uaiAssignments
 }
