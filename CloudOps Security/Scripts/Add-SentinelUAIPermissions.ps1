@@ -173,7 +173,9 @@ $resources = @(
             "User-PasswordProfile.ReadWrite.All",
             "IdentityRiskyUser.ReadWrite.All",
             "Mail.ReadWrite",
-            "ThreatHunting.Read.All"
+            "ThreatHunting.Read.All",
+            "SecurityIdentitiesActions.ReadWrite.All",
+            "SecurityIdentitiesAccounts.Read.All"
         )
     },
     @{
