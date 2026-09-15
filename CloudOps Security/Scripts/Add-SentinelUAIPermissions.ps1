@@ -175,7 +175,7 @@ $resources = @(
             "Mail.ReadWrite",
             "ThreatHunting.Read.All",
             "SecurityIdentitiesActions.ReadWrite.All",
-            "SecurityIdentitiesAccounts.Read.All"
+            "SecurityIdentitiesAccount.Read.All"
         )
     },
     @{
